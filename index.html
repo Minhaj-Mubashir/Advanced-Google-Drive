@@ -1,0 +1,59 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agentic Drive</title>
+<style>
+:root{--bg:#f3f6f7;--card:#fff;--ink:#13212b;--mute:#5d6f7b;--line:#d3dbe0;--acc:#0a6c74;--warn:#b45309;--bad:#b42318;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#10181d;--card:#172229;--ink:#e6eef2;--mute:#93a6b2;--line:#2a3a44;--acc:#4cc2cb;--warn:#f0a35a;--bad:#f28b82;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+header{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+header b{margin-right:14px;font-size:17px}nav button{border:0;background:none;color:var(--mute);padding:8px 12px;border-radius:6px;font:inherit;cursor:pointer}
+nav button.on{background:var(--acc);color:#fff}main{max-width:900px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+button.a,input,textarea{font:inherit;border-radius:6px;border:1px solid var(--line);padding:7px 11px;background:var(--card);color:var(--ink)}
+button.a{background:var(--acc);color:#fff;border-color:var(--acc);cursor:pointer}button.s{background:none;color:var(--ink);border-color:var(--line)}
+#drop{border:2px dashed var(--line);border-radius:8px;padding:22px;text-align:center;color:var(--mute);margin-bottom:12px}#drop.over{border-color:var(--acc);color:var(--acc)}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.mute{color:var(--mute);font-size:13px}
+.tag{font-size:12px;border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin-right:4px}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.cite{cursor:pointer;color:var(--acc);text-decoration:underline}pre{white-space:pre-wrap;margin:6px 0}input[type=text]{width:100%}
+</style></head><body>
+<header><b>Agentic Drive</b><nav id="nav"></nav></header><main id="m"></main>
+<script>
+const $=s=>document.querySelector(s),tabs=['Drive','Ask','Approvals','Activity'];let tab='Drive',sel=new Set();
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(p,o){const r=await fetch('/api'+p,o);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||j.message||r.statusText);return j}
+const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+function nav(){$('#nav').innerHTML=tabs.map(t=>`<button class="${t==tab?'on':''}" onclick="go('${t}')">${t}</button>`).join('')}
+function go(t){tab=t;nav();({Drive,Ask,Approvals,Activity})[t]()}
+async function Drive(){
+ $('#m').innerHTML=`<div id="drop">Drop files here or <label class="cite"><input id="f" type="file" multiple hidden>browse</label><div class="mute">PDF, DOCX, TXT, MD, CSV, XLSX</div></div>
+ <div class="row card"><input id="q" placeholder="Filter by name" style="flex:1"><button class="a" onclick="synth()">Synthesize selected</button></div><div id="msg" class="mute"></div><div id="list"></div><div id="art"></div>`;
+ const d=$('#drop');d.ondragover=e=>{e.preventDefault();d.classList.add('over')};d.ondragleave=()=>d.classList.remove('over');
+ d.ondrop=e=>{e.preventDefault();d.classList.remove('over');upload(e.dataTransfer.files)};$('#f').onchange=e=>upload(e.target.files);$('#q').oninput=list;list()}
+async function upload(fs){for(const f of fs){const fd=new FormData();fd.append('file',f);$('#msg').textContent='Uploading '+f.name+'…';
+ try{await api('/documents',{method:'POST',body:fd});$('#msg').textContent='Uploaded '+f.name}catch(e){$('#msg').innerHTML=`<span class="bad">${esc(f.name)}: ${esc(e.message)}</span>`}}list()}
+async function list(){const r=await api('/documents?q='+encodeURIComponent($('#q')?.value||''));const el=$('#list');if(!el)return;
+ if(!r.items.length){el.innerHTML='<div class="card mute">No files yet. Upload an invoice, meeting notes or a report to get started.</div>';return}
+ el.innerHTML=r.items.map(d=>`<div class="card row"><label><input type="checkbox" ${sel.has(d.id)?'checked':''} onchange="sel[this.checked?'add':'delete'](${d.id})"> <b>${esc(d.name)}</b>
+ <div class="mute">${d.status}${d.error?` — <span class="bad">${esc(d.error)}</span>`:''} · ${esc(d.doc_type||'')} · ${(d.size/1024).toFixed(1)} KB ${d.duplicate_of?'· <span class="warn">duplicate of #'+d.duplicate_of+'</span>':''}</div>
+ ${(d.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</label>
+ <div>${d.suggested_folder&&d.folder!=d.suggested_folder?`<button class="s" onclick="mv(${d.id},'${d.suggested_folder}')">Move to ${d.suggested_folder}</button> `:`<span class="mute">${esc(d.folder)}</span> `}
+ <button class="s" onclick="rm(${d.id})">Trash</button></div></div>`).join('');
+ if(r.items.some(d=>['queued','processing'].includes(d.status)))setTimeout(list,1000)}
+const mv=async(id,f)=>{await api('/documents/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:f})});list()};
+const rm=async id=>{if(confirm('Move to trash? You can restore it via the API.')){await api('/documents/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashed:true})});list()}};
+async function synth(){if(!sel.size){$('#msg').textContent='Select at least one file first.';return}
+ try{const a=await post('/synthesize',{document_ids:[...sel],title:'Cross-document summary'});
+ $('#art').innerHTML=`<div class="card"><pre>${esc(a.content)}</pre>${a.conflicts.map(c=>`<div class="warn"><b>Possible conflict: ${esc(c.topic)}</b> — ${esc(c.note)}<br>${c.claims.map(x=>esc(x.value)+' in '+esc(x.doc)).join(' vs ')}</div>`).join('')}<div class="mute">Saved as artifact #${a.id} · ${a.created}</div></div>`}catch(e){$('#msg').innerHTML=`<span class="bad">${esc(e.message)}</span>`}}
+function Ask(){$('#m').innerHTML=`<div class="row card"><input id="q" type="text" placeholder="Ask across your documents, e.g. What is the project budget?"><button class="a" onclick="ask()">Ask</button></div><div id="out"></div>`;$('#q').onkeydown=e=>e.key=='Enter'&&ask()}
+async function ask(){const q=$('#q').value.trim();if(!q)return;$('#out').innerHTML='<div class="card mute">Searching…</div>';
+ try{const r=await post('/ask',{question:q});$('#out').innerHTML=`<div class="card"><pre>${esc(r.answer).replace(/\[(\d+)\]/g,'<span class="cite" onclick="showSrc($1)">[$1]</span>')}</pre><div class="mute">mode: ${r.mode} · review: ${r.review}</div></div>
+ ${r.citations.map(c=>`<div class="card" id="s${c.n}"><b>[${c.n}] ${esc(c.doc)}</b> <span class="mute">p.${c.page}</span><pre class="mute">${esc(c.text)}</pre><a class="cite" href="/api/documents/${c.doc_id}/file">Open file</a></div>`).join('')}`;window.R=r}catch(e){$('#out').innerHTML=`<div class="card bad">${esc(e.message)}</div>`}}
+const showSrc=n=>$('#s'+n)?.scrollIntoView({behavior:'smooth'});
+async function Approvals(){const a=await api('/approvals');const s=await api('/expenses/summary');
+ $('#m').innerHTML=`<div class="card"><b>Expense summary</b> ${s.totals.length?s.totals.map(t=>`<div>${esc(t.currency||'?')} ${t.total.toFixed(2)} <span class="mute">(${t.count} approved)</span></div>`).join(''):'<div class="mute">No approved expenses yet.</div>'}</div>`+
+ (a.length?a.map(p=>{const f=p.payload.fields;return`<div class="card"><b>Expense from invoice #${p.doc_id}</b>${p.payload.issues.map(i=>`<div class="warn">⚠ ${esc(i)}</div>`).join('')}
+ ${Object.entries(f).map(([k,v])=>`<div class="mute">${k}: <b style="color:var(--ink)">${esc(v)}</b> ${p.payload.evidence[k]?`— p.${p.payload.evidence[k].page}: “${esc(p.payload.evidence[k].line)}”`:''}</div>`).join('')}
+ <p><button class="a" onclick="dec(${p.id},'approve')">Approve and save expense</button> <button class="s" onclick="dec(${p.id},'reject')">Reject</button></p></div>`}).join(''):'<div class="card mute">Nothing waiting for approval. Upload an invoice to see the workflow run.</div>')}
+async function dec(id,d){try{await post(`/approvals/${id}/decide`,{decision:d});Approvals()}catch(e){alert(e.message)}}
+async function Activity(){const a=await api('/activity');$('#m').innerHTML=a.length?a.map(x=>`<div class="card"><b>${esc(x.event)}</b> <span class="mute">${x.ts}</span><div class="mute">${esc(JSON.stringify(x.detail))}</div></div>`).join(''):'<div class="card mute">No activity yet.</div>'}
+go('Drive')
+</script></body></html>
